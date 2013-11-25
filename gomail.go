@@ -1,10 +1,8 @@
 package main
 
 import (
-	"io"
 	"log"
 	"net"
-	"strconv"
 	"runtime"
 )
 
@@ -12,46 +10,67 @@ const (
 	server_name = "mail.mel.io"
 )
 
-var mainListener net.Listener
-
-func main() {
-	startServer(3005)
+type Server struct {
+	Addr string
 }
 
-func startServer(port int) {
-	log.Println(strconv.Itoa(port))
-	mainListener, err := net.Listen("tcp", ":"+strconv.Itoa(port))
-	if err != nil {
-		log.Fatal(err)
+type conn struct {
+	remoteAddr string
+	server     *Server
+	rwc        net.Conn
+}
+
+func ListenAndServe(addr string) error {
+	server := &Server{Addr: addr}
+	return server.ListenAndServe()
+}
+
+func (srv *Server) ListenAndServe() error {
+	addr := srv.Addr
+	if addr == "" {
+		addr = ":stmp"
 	}
-	log.Println("Server started listening on port", strconv.Itoa(port))
-
-	conn, err := mainListener.Accept()
-	if err != nil {
-		log.Fatal(err)
+	l, e := net.Listen("tcp", addr)
+	if e != nil {
+		return e
 	}
-	log.Println("Accepted connection from", conn.RemoteAddr())
-
-	go handleConnection(conn)
+	return srv.Serve(l)
 }
 
-func stopServer() {
-	mainListener.Close()
+func (srv *Server) Serve(l net.Listener) error {
+	defer l.Close()
+
+	go func() {
+		for {
+			rw, e := l.Accept()
+			if e != nil {
+				return e
+			}
+			c, err := srv.newConn(rw)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+			go c.serve()
+		}
+	}()
 }
 
-func handleConnection(c net.Conn) {
-	io.Copy(c, c)
-	c.Close()
-	log.Println("Connection closed", c.RemoteAddr())
+func (srv *Server) newConn(rwc net.Conn) (c *conn, err error) {
+	c = new(conn)
+	c.remoteAddr = rwc.RemoteAddr().String()
+	c.server = srv
+	c.rwc = rwc
+	return c, nil
 }
 
-func (c *net.Conn) server(){
-	defer func(){
+func (c *conn) serve() {
+	defer func() {
 		if err := recover(); err != nil {
 			const size = 4096
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			log.Println("smtpd: panic %v\n%s", err, buff)
+			log.Println(err, buf)
 		}
 	}()
 }

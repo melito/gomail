@@ -7,7 +7,8 @@ import (
 )
 
 func TestWelcomeMessage(t *testing.T) {
-	startServer(3005)
+
+	ListenAndServe("localhost:3005")
 
 	client, err := smtp.Dial("localhost:3005")
 	if err != nil {
@@ -19,5 +20,4 @@ func TestWelcomeMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stopServer()
 }
