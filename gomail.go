@@ -15,10 +15,9 @@ const (
 type Client struct {
 	Conn     net.Conn
 	Text     *textproto.Conn
-	didHelo  bool
 	Rcpt     string
 	From     string
-	Data     string
+	Data     []byte
 	ClientId string
 }
 
@@ -42,7 +41,6 @@ func startServer(port int) {
 		client := Client{
 			Conn:     conn,
 			Text:     textproto.NewConn(conn),
-			didHelo:  false,
 			ClientId: strconv.Itoa(count),
 		}
 
@@ -52,7 +50,7 @@ func startServer(port int) {
 }
 
 func (c *Client) sendResponse(resp string) {
-	resp = resp + " " + c.ClientId + " emel"
+	resp = resp + " - " + c.ClientId + " eMel"
 	id, err := c.Text.Cmd(resp)
 	if err != nil {
 		log.Println(err)
@@ -62,8 +60,7 @@ func (c *Client) sendResponse(resp string) {
 }
 
 func (c *Client) doHelo() {
-	c.sendResponse("220 mx.valis.org SMTP gomail")
-	c.didHelo = true
+	c.sendResponse("220 " + server_name + " SMTP")
 }
 
 func (c *Client) Close() {
@@ -73,7 +70,7 @@ func (c *Client) Close() {
 }
 
 func (c *Client) sendHello() {
-	c.sendResponse("250 mx.valis.org at your service")
+	c.sendResponse("250 " + server_name + " at your service")
 }
 
 func (c *Client) sendCommandNotRecognized() {
@@ -92,9 +89,24 @@ func (c *Client) sendOk() {
 	c.sendResponse("250 2.1.5 OK")
 }
 
+func (c *Client) sendGoAhead() {
+	c.sendResponse("354 Enter message, ending with \".\" on a line by itself")
+}
+
+func (c *Client) getEmailData() {
+	buf, err := c.Text.ReadDotBytes()
+	if err != nil {
+		log.Println(err)
+	}
+	c.Data = buf
+
+	c.sendResponse("250 OK : Queued Message")
+}
+
 func (c *Client) reset() {
 	c.From = ""
 	c.Rcpt = ""
+	c.Data = nil
 	c.sendResponse("250 2.1.5 Flushed")
 }
 
@@ -136,6 +148,10 @@ func parseCommand(line string, c Client) (finished bool) {
 
 	case "mail":
 		c.sendOk()
+
+	case "data":
+		c.sendGoAhead()
+		c.getEmailData()
 
 	case "rset":
 		c.reset()

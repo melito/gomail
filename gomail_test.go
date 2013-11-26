@@ -1,11 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"net/smtp"
 	"testing"
 )
 
-func TestHelloQuit(t *testing.T) {
+func TestBasicMailCommands(t *testing.T) {
 
 	go startServer(3005)
 
@@ -26,17 +27,43 @@ func TestHelloQuit(t *testing.T) {
 		t.Fatal("We didn't receive an error when issuing a VRFY")
 	}
 
-	// Run RCPT to
+	// Run RCPT TO
 	err = client.Rcpt("mel@clevercollie.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// Run MAIL FROM
 	err = client.Mail("melgray@gmail.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// Run DATA
+	wc, err := client.Data()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wc.Close()
+
+	// Print a small message to the server
+	buf := bytes.NewBufferString("It would be wise to remember that the same people\nwho'd stop you from listening to Boards Of Canada\nmay be back next year to complain about a book, or even a TV program")
+	if _, err = buf.WriteTo(wc); err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestResetAndQuiteCommands(t *testing.T) {
+
+	go startServer(3006)
+
+	client, err := smtp.Dial("localhost:3006")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reset everything
 	err = client.Reset()
 	if err != nil {
 		t.Fatal(err)
@@ -47,5 +74,4 @@ func TestHelloQuit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 }
