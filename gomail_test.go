@@ -14,11 +14,35 @@ func TestHelloQuit(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Say helo
 	err = client.Hello("cheeri.os")
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// Run vrfy
+	err = client.Verify("melgray@gmail.com")
+	if err == nil {
+		t.Fatal("We didn't receive an error when issuing a VRFY")
+	}
+
+	// Run RCPT to
+	err = client.Rcpt("mel@clevercollie.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.Mail("melgray@gmail.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.Reset()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Say goodbye
 	err = client.Quit()
 	if err != nil {
 		t.Fatal(err)

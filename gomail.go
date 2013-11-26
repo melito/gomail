@@ -13,12 +13,13 @@ const (
 )
 
 type Client struct {
-	Conn    net.Conn
-	Text    *textproto.Conn
-	didHelo bool
-	Rcpt    string
-	From    string
-	Data    string
+	Conn     net.Conn
+	Text     *textproto.Conn
+	didHelo  bool
+	Rcpt     string
+	From     string
+	Data     string
+	ClientId string
 }
 
 func main() {
@@ -28,13 +29,19 @@ func main() {
 func startServer(port int) {
 	l, _ := net.Listen("tcp", ":"+strconv.Itoa(port))
 	for {
+
 		conn, err := l.Accept()
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
-		client := Client{Conn: conn, Text: textproto.NewConn(conn), didHelo: false}
+		client := Client{
+			Conn:    conn,
+			Text:    textproto.NewConn(conn),
+			didHelo: false,
+		}
+
 		go hanndleConnection(client)
 	}
 }
@@ -51,8 +58,49 @@ func (c *Client) doHelo() {
 }
 
 func (c *Client) Close() {
+	id, _ := c.Text.Cmd("221 2.0.0 closing connection")
+	c.Text.StartResponse(id)
+	defer c.Text.EndResponse(id)
 	c.Text.Close()
 	c.Conn.Close()
+}
+
+func (c *Client) sendHello() {
+	id, _ := c.Text.Cmd("250 mx.valis.org at your service")
+	c.Text.StartResponse(id)
+	defer c.Text.EndResponse(id)
+}
+
+func (c *Client) sendCommandNotRecognized() {
+	id, _ := c.Text.Cmd("500 unrecognized command")
+	c.Text.StartResponse(id)
+	defer c.Text.EndResponse(id)
+}
+
+func (c *Client) sendCommandNotImplemented() {
+	id, _ := c.Text.Cmd("502 5.5.1 Unimplemented comand")
+	c.Text.StartResponse(id)
+	defer c.Text.EndResponse(id)
+}
+
+func (c *Client) sendWillTryMyBest() {
+	id, _ := c.Text.Cmd("252 2.1.5 Send some mail, I'll try my best")
+	c.Text.StartResponse(id)
+	defer c.Text.EndResponse(id)
+}
+
+func (c *Client) sendOk() {
+	id, _ := c.Text.Cmd("250 2.1.5 OK")
+	c.Text.StartResponse(id)
+	defer c.Text.EndResponse(id)
+}
+
+func (c *Client) reset() {
+	c.From = ""
+	c.Rcpt = ""
+	id, _ := c.Text.Cmd("250 2.1.5 Flushed")
+	c.Text.StartResponse(id)
+	defer c.Text.EndResponse(id)
 }
 
 func hanndleConnection(c Client) {
@@ -73,26 +121,36 @@ func hanndleConnection(c Client) {
 func parseCommand(line string, c Client) (finished bool) {
 	pieces := strings.Split(line, " ")
 	cmd := strings.ToLower(pieces[0])
-	log.Println(cmd)
+	//log.Println(line)
 
 	switch cmd {
 	case "helo":
-		id, _ := c.Text.Cmd("250 mx.valis.org at your service")
-		c.Text.StartResponse(id)
-		defer c.Text.EndResponse(id)
-		return false
+		c.sendHello()
 
 	case "ehlo":
-		id, _ := c.Text.Cmd("250 mx.valis.org at your service")
-		c.Text.StartResponse(id)
-		defer c.Text.EndResponse(id)
-		return false
+		c.sendHello()
+
+	case "expn":
+		c.sendCommandNotImplemented()
+
+	case "vrfy":
+		c.sendWillTryMyBest()
+
+	case "rcpt":
+		c.sendOk()
+
+	case "mail":
+		c.sendOk()
+
+	case "rset":
+		c.reset()
+
 	case "quit":
-		id, _ := c.Text.Cmd("221 2.0.0 closing connection")
-		c.Text.StartResponse(id)
-		defer c.Text.EndResponse(id)
 		c.Close()
 		return true
+
+	default:
+		c.sendCommandNotRecognized()
 	}
 
 	return false
