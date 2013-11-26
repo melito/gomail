@@ -3,74 +3,98 @@ package main
 import (
 	"log"
 	"net"
-	"runtime"
+	"net/textproto"
+	"strconv"
+	"strings"
 )
 
 const (
 	server_name = "mail.mel.io"
 )
 
-type Server struct {
-	Addr string
+type Client struct {
+	Conn    net.Conn
+	Text    *textproto.Conn
+	didHelo bool
+	Rcpt    string
+	From    string
+	Data    string
 }
 
-type conn struct {
-	remoteAddr string
-	server     *Server
-	rwc        net.Conn
+func main() {
+	startServer(3005)
 }
 
-func ListenAndServe(addr string) error {
-	server := &Server{Addr: addr}
-	return server.ListenAndServe()
-}
-
-func (srv *Server) ListenAndServe() error {
-	addr := srv.Addr
-	if addr == "" {
-		addr = ":stmp"
-	}
-	l, e := net.Listen("tcp", addr)
-	if e != nil {
-		return e
-	}
-	return srv.Serve(l)
-}
-
-func (srv *Server) Serve(l net.Listener) error {
-	defer l.Close()
-
-	go func() {
-		for {
-			rw, e := l.Accept()
-			if e != nil {
-				return e
-			}
-			c, err := srv.newConn(rw)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			go c.serve()
+func startServer(port int) {
+	l, _ := net.Listen("tcp", ":"+strconv.Itoa(port))
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			log.Println(err)
+			continue
 		}
-	}()
+
+		client := Client{Conn: conn, Text: textproto.NewConn(conn), didHelo: false}
+		go hanndleConnection(client)
+	}
 }
 
-func (srv *Server) newConn(rwc net.Conn) (c *conn, err error) {
-	c = new(conn)
-	c.remoteAddr = rwc.RemoteAddr().String()
-	c.server = srv
-	c.rwc = rwc
-	return c, nil
+func (c *Client) doHelo() {
+	id, err := c.Text.Cmd("220 mx.valis.org SMTP gomail")
+	if err != nil {
+		log.Println(err)
+	}
+	c.Text.StartResponse(id)
+	defer c.Text.EndResponse(id)
+
+	c.didHelo = true
 }
 
-func (c *conn) serve() {
-	defer func() {
-		if err := recover(); err != nil {
-			const size = 4096
-			buf := make([]byte, size)
-			buf = buf[:runtime.Stack(buf, false)]
-			log.Println(err, buf)
+func (c *Client) Close() {
+	c.Text.Close()
+	c.Conn.Close()
+}
+
+func hanndleConnection(c Client) {
+	defer c.Close()
+	log.Println("Connection from:", c.Conn.RemoteAddr())
+
+	c.doHelo()
+
+	for {
+		line, _ := c.Text.ReadLine()
+		finished := parseCommand(line, c)
+		if finished {
+			break
 		}
-	}()
+	}
+}
+
+func parseCommand(line string, c Client) (finished bool) {
+	pieces := strings.Split(line, " ")
+	cmd := strings.ToLower(pieces[0])
+	log.Println(cmd)
+
+	switch cmd {
+	case "helo":
+		id, _ := c.Text.Cmd("250 mx.valis.org at your service")
+		c.Text.StartResponse(id)
+		defer c.Text.EndResponse(id)
+		return false
+
+	case "ehlo":
+		id, _ := c.Text.Cmd("250 mx.valis.org at your service")
+		c.Text.StartResponse(id)
+		defer c.Text.EndResponse(id)
+		return false
+	case "quit":
+		id, _ := c.Text.Cmd("221 2.0.0 closing connection")
+		c.Text.StartResponse(id)
+		defer c.Text.EndResponse(id)
+		c.Close()
+		return true
+	}
+
+	return false
+
 }

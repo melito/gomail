@@ -1,14 +1,13 @@
 package main
 
 import (
-	_ "fmt"
 	"net/smtp"
 	"testing"
 )
 
-func TestWelcomeMessage(t *testing.T) {
+func TestHelloQuit(t *testing.T) {
 
-	ListenAndServe("localhost:3005")
+	go startServer(3005)
 
 	client, err := smtp.Dial("localhost:3005")
 	if err != nil {
@@ -16,6 +15,11 @@ func TestWelcomeMessage(t *testing.T) {
 	}
 
 	err = client.Hello("cheeri.os")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.Quit()
 	if err != nil {
 		t.Fatal(err)
 	}
