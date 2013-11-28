@@ -8,7 +8,8 @@ import (
 
 func TestBasicMailCommands(t *testing.T) {
 
-	go startServer(3005)
+	server := newServer(3005)
+	go startServer(server)
 
 	client, err := smtp.Dial("localhost:3005")
 	if err != nil {
@@ -52,11 +53,14 @@ func TestBasicMailCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	//server.Stop()
+
 }
 
 func TestResetAndQuiteCommands(t *testing.T) {
 
-	go startServer(3006)
+	server := newServer(3006)
+	go startServer(server)
 
 	client, err := smtp.Dial("localhost:3006")
 	if err != nil {
@@ -74,4 +78,6 @@ func TestResetAndQuiteCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	//server.Stop()
 }

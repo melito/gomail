@@ -8,9 +8,11 @@ import (
 	"strings"
 )
 
-const (
-	server_name = "mail.mel.io"
-)
+type Server struct {
+	Addr     string
+	Name     string
+	listener net.Listener
+}
 
 type Client struct {
 	Conn     net.Conn
@@ -19,14 +21,32 @@ type Client struct {
 	From     string
 	Data     []byte
 	ClientId string
+	server   *Server
+	finished chan bool
 }
 
 func main() {
-	startServer(3005)
+	server := newServer(3005)
+	startServer(server)
 }
 
-func startServer(port int) {
-	l, _ := net.Listen("tcp", ":"+strconv.Itoa(port))
+func newServer(port int) Server {
+	return Server{
+		Addr: ":" + strconv.Itoa(port),
+		Name: "localhost"}
+}
+
+func startServer(server Server) {
+	server.Start()
+}
+
+func (server *Server) Start() {
+	l, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		log.Fatal("Error starting server", err)
+	}
+	defer l.Close()
+	server.listener = l
 
 	var count int
 	count = 1
@@ -35,18 +55,23 @@ func startServer(port int) {
 		conn, err := l.Accept()
 		if err != nil {
 			log.Println(err)
-			continue
 		}
 
 		client := Client{
 			Conn:     conn,
 			Text:     textproto.NewConn(conn),
 			ClientId: strconv.Itoa(count),
+			server:   server,
+			finished: make(chan bool),
 		}
 
 		go hanndleConnection(client)
+
 		count += 1
 	}
+}
+
+func (server *Server) Stop() {
 }
 
 func (c *Client) sendResponse(resp string) {
@@ -60,17 +85,22 @@ func (c *Client) sendResponse(resp string) {
 }
 
 func (c *Client) doHelo() {
-	c.sendResponse("220 " + server_name + " SMTP")
+	c.sendResponse("220 " + c.server.Name + " SMTP")
+}
+
+func (c *Client) sendGoodbye() {
+	c.sendResponse("221 2.0.0 closing connection")
+	c.finished <- true
 }
 
 func (c *Client) Close() {
-	c.sendResponse("221 2.0.0 closing connection")
+	log.Println("Closing connection", c.Conn.RemoteAddr())
 	c.Text.Close()
 	c.Conn.Close()
 }
 
 func (c *Client) sendHello() {
-	c.sendResponse("250 " + server_name + " at your service")
+	c.sendResponse("250 " + c.server.Name + " at your service")
 }
 
 func (c *Client) sendCommandNotRecognized() {
@@ -101,6 +131,7 @@ func (c *Client) getEmailData() {
 	c.Data = buf
 
 	c.sendResponse("250 OK : Queued Message")
+	log.Println("Queued message from", c.Conn.RemoteAddr())
 }
 
 func (c *Client) reset() {
@@ -112,20 +143,22 @@ func (c *Client) reset() {
 
 func hanndleConnection(c Client) {
 	defer c.Close()
-	log.Println("Connection from:", c.Conn.RemoteAddr())
+	log.Println("Connection from", c.Conn.RemoteAddr())
 
 	c.doHelo()
 
 	for {
-		line, _ := c.Text.ReadLine()
-		finished := parseCommand(line, c)
-		if finished {
+		select {
+		case <-c.finished:
 			break
+		default:
+			line, _ := c.Text.ReadLine()
+			parseCommand(line, c)
 		}
 	}
 }
 
-func parseCommand(line string, c Client) (finished bool) {
+func parseCommand(line string, c Client) {
 	pieces := strings.Split(line, " ")
 	cmd := strings.ToLower(pieces[0])
 	//log.Println(line)
@@ -157,13 +190,10 @@ func parseCommand(line string, c Client) (finished bool) {
 		c.reset()
 
 	case "quit":
-		c.Close()
-		return true
+		c.sendGoodbye()
 
 	default:
 		c.sendCommandNotRecognized()
 	}
-
-	return false
 
 }
