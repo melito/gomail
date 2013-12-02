@@ -1,9 +1,12 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"net"
+	"net/mail"
 	"net/textproto"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -17,8 +20,8 @@ type Server struct {
 type Client struct {
 	Conn     net.Conn
 	Text     *textproto.Conn
-	Rcpt     string
-	From     string
+	Rcpt     []*mail.Address
+	From     *mail.Address
 	Data     []byte
 	ClientId string
 	server   *Server
@@ -130,15 +133,45 @@ func (c *Client) getEmailData() {
 	}
 	c.Data = buf
 
+	c.deliverEmail()
+
 	c.sendResponse("250 OK : Queued Message")
 	log.Println("Queued message from", c.Conn.RemoteAddr())
 }
 
+func (c *Client) deliverEmail() {
+
+	for _, userAddr := range c.Rcpt {
+		path := filepath.Join(pathToMailDirForEmail(userAddr.Address), "new")
+		filename := filepath.Join(path, createUniqueFileName())
+		err := ioutil.WriteFile(filename, c.Data, 0600)
+		if err != nil {
+			log.Println(err)
+		}
+
+	}
+
+}
+
 func (c *Client) reset() {
-	c.From = ""
-	c.Rcpt = ""
+	c.From = nil
+	c.Rcpt = nil
 	c.Data = nil
 	c.sendResponse("250 2.1.5 Flushed")
+}
+
+func (c *Client) parseRcptData(line string) {
+	c.Rcpt, _ = mail.ParseAddressList(line)
+}
+
+func (c *Client) parseMailFromData(line string) {
+	c.From, _ = mail.ParseAddress(line)
+}
+
+func getDataFromLineAfterColon(line string) string {
+	pieces := strings.Split(line, ":")
+	addressStr := strings.Join(pieces[1:], "")
+	return addressStr
 }
 
 func hanndleConnection(c Client) {
@@ -177,9 +210,11 @@ func parseCommand(line string, c Client) {
 		c.sendWillTryMyBest()
 
 	case "rcpt":
+		c.parseRcptData(getDataFromLineAfterColon(line))
 		c.sendOk()
 
 	case "mail":
+		c.parseMailFromData(getDataFromLineAfterColon(line))
 		c.sendOk()
 
 	case "data":
