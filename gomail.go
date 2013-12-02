@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"io/ioutil"
 	"log"
 	"net"
@@ -28,15 +29,44 @@ type Client struct {
 	finished chan bool
 }
 
+var (
+	default_server_name = "localhost"
+	default_listen_port = 25
+)
+
+func init() {
+	var user, pass string
+	flag.IntVar(&default_listen_port, "port", 25, "default port to listen on")
+	flag.StringVar(&default_server_name, "name", "localhost", "default server name used in banner")
+	flag.StringVar(&user, "u", "user@example.com", "Add a user")
+	flag.StringVar(&pass, "x", "", "Set a password (used with the -u flag when adding a user")
+	flag.Parse()
+
+	if pass != "" {
+		if user == "" {
+			log.Fatal("You set a password, but didn't set a user")
+		}
+
+		err := addUser(user, pass)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Println("Added user", user)
+		return
+	}
+
+}
+
 func main() {
-	server := newServer(3005)
+	server := newServer(default_listen_port)
 	startServer(server)
 }
 
 func newServer(port int) Server {
 	return Server{
 		Addr: ":" + strconv.Itoa(port),
-		Name: "localhost"}
+		Name: default_server_name}
 }
 
 func startServer(server Server) {
@@ -144,7 +174,7 @@ func (c *Client) deliverEmail() {
 	for _, userAddr := range c.Rcpt {
 		path := filepath.Join(pathToMailDirForEmail(userAddr.Address), "new")
 		filename := filepath.Join(path, createUniqueFileName())
-		err := ioutil.WriteFile(filename, c.Data, 0600)
+		err := ioutil.WriteFile(filename, c.Data, 0700)
 		if err != nil {
 			log.Println(err)
 		}
