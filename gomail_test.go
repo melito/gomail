@@ -81,3 +81,7 @@ func TestResetAndQuiteCommands(t *testing.T) {
 
 	//server.Stop()
 }
+
+func TestAddressParsing(t *testing.T) {
+
+}

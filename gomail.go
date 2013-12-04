@@ -98,7 +98,7 @@ func (server *Server) Start() {
 			finished: make(chan bool),
 		}
 
-		go hanndleConnection(client)
+		go hanndleConnection(&client)
 
 		count += 1
 	}
@@ -204,7 +204,7 @@ func getDataFromLineAfterColon(line string) string {
 	return addressStr
 }
 
-func hanndleConnection(c Client) {
+func hanndleConnection(c *Client) {
 	defer c.Close()
 	log.Println("Connection from", c.Conn.RemoteAddr())
 
@@ -221,10 +221,9 @@ func hanndleConnection(c Client) {
 	}
 }
 
-func parseCommand(line string, c Client) {
+func parseCommand(line string, c *Client) {
 	pieces := strings.Split(line, " ")
 	cmd := strings.ToLower(pieces[0])
-	//log.Println(line)
 
 	switch cmd {
 	case "helo":
